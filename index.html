@@ -6,10 +6,166 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>ECG Chart</title>
+    <link rel="icon" type="image/png"
+        href="https://lh4.googleusercontent.com/zZDJJe2tKLybKIyJ_LUMVr77czVKENLStF_XHRV-26cs4oZqAqSJbvRMJ4qyp1DzBC1V3k_Nr7zEnDw3GamlYGAP8x9EedztvS7eH-dapbhLgqX_cIoMm9BnX6zBiyWwpqdy1Yu1uA=w100-h20" />
+
+    <!-- JavaScripts used by this html file. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/4.6.3/papaparse.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 
 <body>
+    <script>
+        const uri = (
+            "https://docs.google.com/spreadsheets/d/e/2PACX-1vRhJSg7JV5W_LALesi4F20AWr6cCev99mr12Zh9j6At3TDJWGqYf4qsblAvLYPbugcnK0FOJ_WMnWRV/pub?gid=2093731892&single=true&output=csv"
+        ); {
+            let ecgOnY = [];
+            let timeOnX = [];
+            let recordSize = 0;
+            const samplesPerSecond = 128;
 
+            Papa.remoteChunkSize = 512;
+
+            options = {
+                download: true,
+                header: true,
+                dynamicTyping: true,
+                beforeFirstChunk: function (chunk) {
+                    let header = chunk.split(/\r\n/);
+                    let skipLine = header.splice(1, 1);
+                    return header.join("\r\n").toUpperCase();
+                },
+                complete: function (results, file) {
+                    // Parse time & voltage values into an array.
+                    timeOnX = results.data.map(mSecs => mSecs["TIME"]);
+                    ecgOnY = results.data.map(mVolts => mVolts["ECG"]);
+                    recordSize = results.data.length;
+
+                    // Plot & update the graph.
+                    plotGraph();
+                    setTimeout(updateGraph);
+                }
+
+            };
+
+            // Download the data with the above options. 
+            Papa.parse(uri, options);
+
+            var start = start || 0;
+
+            /**
+             * multiplier is used to get the next chunk from the array.
+             */
+            const multiplier = (() => {
+                let counter = 1;
+                return () => {
+                    return counter += 1;
+                }
+            })();
+
+            /**
+             * Name: getUpdate
+             * Purpose: This function gets the next chunk of data.
+             * Returns: A tuple or empty array.
+             * Parameters: None.
+             */
+            function getUpdate() {
+
+                let dataOptions = {
+                    x: [],
+                    y: [],
+                }
+
+                let dataPoints = dataOptions;
+
+                if (recordSize === 0) {
+                    console.log("getUpdate() -> recordSize returned: ", 0);
+                    return dataPoints;
+                }
+
+                end = samplesPerSecond * multiplier();
+
+                dataOptions["x"] = [Array.from(timeOnX.slice(start, end))];
+                dataOptions["y"] = [Array.from(ecgOnY.slice(start, end))];
+
+                start = end;
+
+                if (start >= recordSize) {
+                    console.log("Reached end of data, cleaning resources...");
+                    dataPoints = {};
+                }
+
+                return [dataPoints];
+            }
+
+            /**
+             * Name: plotGraph
+             * Purpose: This function sets the chart options & layout & creates a plot.
+             */
+            function plotGraph() {
+
+                let dataOptions = {
+                    x: [],
+                    y: [],
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: {
+                        color: 'black',
+                        width: 1,
+                        dash: "line",
+                        shape: "spline",
+                        smoothing: 1.0
+                    },
+                };
+
+                let dataPoints = [dataOptions];
+
+                let layout = {
+                    autosize: false,
+                    xaxis: {
+                        autorange: true,
+                        showgrid: false,
+                        ticks: '',
+                        showticklabels: false
+                    },
+                    width: window.innerWidth,
+                    height: (window.innerHeight / 2),
+                    margin: {
+                        l: 50,
+                        r: 50,
+                        b: 80,
+                        t: 100,
+                        pad: 4
+                    }
+                };
+
+                Plotly.react('ecgChart', dataPoints, layout);
+            }
+
+            function updateGraph() {
+
+                // Update chart every 'x' milliseconds.
+
+                let hTimeoutOuter;
+                let hTimeoutInner;
+
+                hTimeoutOuter = setTimeout(function run() {
+
+                    let update = getUpdate()[0];
+                    if (typeof (update) === 'object' && (update["x"] || update["y"])) {
+                        Plotly.extendTraces('ecgChart', update, [0]);
+                        hTimeoutInner = setTimeout(run, 50);
+                    } else {
+                        console.log("Reached end of data...cleaning resources...");
+                        clearTimeout(hTimeoutInner);
+                        clearTimeout(hTimeoutOuter);
+                    }
+                }, 50);
+            }
+        }
+
+    </script>
+    <div id="ecgChart"></div>
 </body>
 
 </html>
